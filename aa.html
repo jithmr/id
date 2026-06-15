@@ -45,27 +45,53 @@ document.getElementById('folderBtn').onclick=async()=>{
  document.getElementById('status').innerHTML="✅ Folder selected";
 };
 
-document.getElementById('pasteBtn').onclick=async()=>{
- try{
-   const text = await navigator.clipboard.readText();
+document.getElementById('pasteBtn').onclick = async () => {
 
-   const lines=text.split(/\r?\n/).filter(x=>x.trim());
-   rows=[];
+    try {
 
-   for(const line of lines){
-      const cols=line.split('\t');
+        const text = await navigator.clipboard.readText();
 
-      if(cols.length < 4) continue;
+        const lines = text
+            .split(/\r?\n/)
+            .map(x => x.trim())
+            .filter(x => x);
 
-      if(cols[1].toLowerCase().includes("promo timing name"))
-         continue;
+        rows = [];
 
-      rows.push({
-         promo: cols[1].trim(),
-         house: cols[3].trim()
-      });
-   }
+        let startIndex = 0;
 
+        for (let i = 0; i < lines.length; i++) {
+
+            if (lines[i].toLowerCase() === "house number") {
+                startIndex = i + 1;
+                break;
+            }
+
+        }
+
+        for (let i = startIndex; i + 3 < lines.length; i += 4) {
+
+            rows.push({
+
+                promo: lines[i + 1],
+
+                house: lines[i + 3]
+
+            });
+
+        }
+
+        document.getElementById('status').innerHTML =
+            `✅ Imported ${rows.length} rows from clipboard`;
+
+    }
+    catch (err) {
+
+        alert("Clipboard read failed: " + err.message);
+
+    }
+
+};
    document.getElementById('status').innerHTML =
       `✅ Imported ${rows.length} rows from clipboard`;
 
