@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>MXF Renamer - Clipboard Edition</title>
+<style>
+body{font-family:Arial;background:#1e1e1e;color:#fff;padding:20px}
+button{padding:10px 15px;margin:5px}
+#log{height:350px;overflow:auto;border:1px solid #444;background:#111;padding:10px;white-space:pre-wrap}
+table{border-collapse:collapse;width:100%;margin-top:10px}
+th,td{border:1px solid #555;padding:6px}
+</style>
+</head>
+<body>
+
+<h2>MXF House Number Renamer (Clipboard Version)</h2>
+
+<button id="folderBtn">Select MXF Folder</button>
+<button id="pasteBtn">Paste From Clipboard</button>
+<button id="previewBtn">Preview Matches</button>
+<button id="renameBtn">Rename Files</button>
+
+<div id="status"></div>
+<div id="preview"></div>
+<div id="log"></div>
+
+<script>
+let folderHandle=null;
+let rows=[];
+
+function normalizeName(name){
+ return name.replace(/\.mxf$/i,'')
+            .replace(/[^a-zA-Z0-9]/g,'')
+            .toLowerCase();
+}
+
+function log(msg){
+ document.getElementById('log').innerHTML += msg + "<br>";
+}
+
+document.getElementById('folderBtn').onclick=async()=>{
+ folderHandle=await window.showDirectoryPicker();
+ document.getElementById('status').innerHTML="✅ Folder selected";
+};
+
+document.getElementById('pasteBtn').onclick=async()=>{
+ try{
+   const text = await navigator.clipboard.readText();
+
+   const lines=text.split(/\r?\n/).filter(x=>x.trim());
+   rows=[];
+
+   for(const line of lines){
+      const cols=line.split('\t');
+
+      if(cols.length < 4) continue;
+
+      if(cols[1].toLowerCase().includes("promo timing name"))
+         continue;
+
+      rows.push({
+         promo: cols[1].trim(),
+         house: cols[3].trim()
+      });
+   }
+
+   document.getElementById('status').innerHTML =
+      `✅ Imported ${rows.length} rows from clipboard`;
+
+ }catch(err){
+   alert("Clipboard access failed. Use Chrome and allow clipboard permission.");
+ }
+};
+
+document.getElementById('previewBtn').onclick=async()=>{
+
+ if(!folderHandle){ alert("Select folder"); return; }
+ if(rows.length===0){ alert("Paste table first"); return; }
+
+ let fileMap={};
+
+ for await(const [name,h] of folderHandle.entries()){
+   if(h.kind==="file" && name.toLowerCase().endsWith(".mxf")){
+      fileMap[normalizeName(name)] = name;
+   }
+ }
+
+ let html='<table><tr><th>Promo</th><th>House</th><th>Status</th></tr>';
+
+ let found=0, missing=0;
+
+ for(const row of rows){
+
+   const match=fileMap[normalizeName(row.promo)];
+
+   if(match){
+      found++;
+      html += `<tr><td>${row.promo}</td><td>${row.house}</td><td>✅ Found</td></tr>`;
+   }else{
+      missing++;
+      html += `<tr><td>${row.promo}</td><td>${row.house}</td><td>❌ Missing</td></tr>`;
+   }
+ }
+
+ html+='</table>';
+
+ document.getElementById('preview').innerHTML=html;
+
+ document.getElementById('status').innerHTML =
+    `Matched: ${found} | Missing: ${missing}`;
+};
+
+document.getElementById('renameBtn').onclick=async()=>{
+
+ if(!folderHandle){ alert("Select folder"); return; }
+ if(rows.length===0){ alert("Paste table first"); return; }
+
+ document.getElementById('log').innerHTML='';
+
+ let fileMap={};
+
+ for await(const [name,h] of folderHandle.entries()){
+   if(h.kind==="file" && name.toLowerCase().endsWith(".mxf")){
+      fileMap[normalizeName(name)] = name;
+   }
+ }
+
+ let renamed=0;
+
+ for(const row of rows){
+
+   const oldFile=fileMap[normalizeName(row.promo)];
+
+   if(!oldFile){
+      log("❌ NOT FOUND : " + row.promo);
+      continue;
+   }
+
+   const newFile=row.house + ".mxf";
+
+   try{
+
+      let exists=false;
+
+      try{
+         await folderHandle.getFileHandle(newFile);
+         exists=true;
+      }catch{}
+
+      if(exists){
+         log("⚠ EXISTS : " + newFile);
+         continue;
+      }
+
+      const oldHandle=await folderHandle.getFileHandle(oldFile);
+      const oldObj=await oldHandle.getFile();
+      const buf=await oldObj.arrayBuffer();
+
+      const newHandle=await folderHandle.getFileHandle(newFile,{create:true});
+      const wr=await newHandle.createWritable();
+      await wr.write(buf);
+      await wr.close();
+
+      await folderHandle.removeEntry(oldFile);
+
+      renamed++;
+      log("✅ " + oldFile + " → " + newFile);
+
+   }catch(err){
+      log("❌ ERROR : " + oldFile);
+   }
+ }
+
+ log("<hr>Finished. Renamed: " + renamed);
+};
+</script>
+</body>
+</html>
