@@ -19,6 +19,8 @@ th,td{border:1px solid #555;padding:6px}
 <button id="pasteBtn">Paste From Clipboard</button>
 <button id="previewBtn">Preview Matches</button>
 <button id="renameBtn">Rename Files</button>
+  <button id="debugBtn">Show Clipboard</button>
+
 
 <div id="status"></div>
 <div id="preview"></div>
@@ -110,6 +112,24 @@ document.getElementById('previewBtn').onclick=async()=>{
     `Matched: ${found} | Missing: ${missing}`;
 };
 
+document.getElementById('debugBtn').onclick = async () => {
+
+    try {
+
+        const text = await navigator.clipboard.readText();
+
+        console.log(text);
+
+        alert(text.substring(0,1000));
+
+    } catch(err) {
+
+        alert("Clipboard read failed: " + err.message);
+
+    }
+
+};
+ 
 document.getElementById('renameBtn').onclick=async()=>{
 
  if(!folderHandle){ alert("Select folder"); return; }
