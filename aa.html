@@ -114,19 +114,16 @@ document.getElementById('previewBtn').onclick=async()=>{
 
 document.getElementById('debugBtn').onclick = async () => {
 
-    try {
+    const text = await navigator.clipboard.readText();
 
-        const text = await navigator.clipboard.readText();
+    console.log(text);
 
-        console.log(text);
-
-        alert(text.substring(0,1000));
-
-    } catch(err) {
-
-        alert("Clipboard read failed: " + err.message);
-
-    }
+    alert(
+        text
+        .replace(/\t/g, "[TAB]")
+        .replace(/\n/g, "[NEWLINE]\n")
+        .substring(0,1500)
+    );
 
 };
  
