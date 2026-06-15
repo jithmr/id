@@ -1,175 +1,305 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Promo Renaming Tool v1.1</title>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Promo File Renamer</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
 <style>
-body{font-family:Arial;background:#f4f4f4;padding:15px}
-.container{max-width:1000px;margin:auto;background:white;padding:20px;border-radius:10px}
-h2{text-align:center;margin-top:0}
-.pgmrow{display:flex;align-items:center;gap:10px;margin:10px 0}
-.pgmrow label{width:90px;font-weight:bold}
-.pgmrow input{flex:1;padding:8px}
-.eprow{margin-left:100px;display:flex;justify-content:space-between;max-width:calc(100% - 100px);margin-bottom:12px}
-.grp{display:flex;align-items:center;gap:8px}
-.grp input{width:120px;padding:8px}
-button{padding:8px 12px;margin:4px}
-#status{white-space:pre-wrap;background:#f7f7f7;padding:12px;margin-top:12px;min-height:120px}
+body{
+    background:#1e1e1e;
+    color:white;
+    font-family:Arial,sans-serif;
+    padding:20px;
+}
+
+.container{
+    max-width:900px;
+    margin:auto;
+}
+
+h2{
+    margin-bottom:20px;
+}
+
+button{
+    background:#0078d7;
+    color:white;
+    border:none;
+    padding:10px 20px;
+    margin:5px;
+    cursor:pointer;
+    border-radius:5px;
+}
+
+button:hover{
+    background:#005fb8;
+}
+
+input[type=file]{
+    margin:10px 0;
+}
+
+#log{
+    margin-top:20px;
+    background:#111;
+    border:1px solid #444;
+    padding:15px;
+    height:450px;
+    overflow-y:auto;
+    white-space:pre-wrap;
+    font-family:Consolas,monospace;
+}
+
+.success{
+    color:#00ff7f;
+}
+
+.error{
+    color:#ff5555;
+}
+
+.warning{
+    color:#ffd700;
+}
 </style>
 </head>
 <body>
+
 <div class="container">
-<h2>Promo Renaming Tool</h2>
 
-<div class="pgmrow">
-<label>PGM Name</label>
-<input id="pgmName">
-</div>
+<h2>Promo House Number Renamer</h2>
 
-<div class="eprow">
-<div class="grp"><label>EP</label><input id="epNo"></div>
-<div class="grp"><label>TD</label><input id="tdDate" placeholder="120326"></div>
-<div class="grp"><label>Dur</label><input id="duration"></div>
-</div>
+<label>Select Excel File</label><br>
+<input type="file" id="excelFile" accept=".xlsx,.xls">
 
-<p><button id="sourceBtn">Select Source Folder</button> <span id="sourceName"></span></p>
-<p><button id="destBtn">Select Destination Folder</button> <button id="clearDestBtn">CLEAR DEST</button> <span id="destName"></span></p>
-<p><button id="excelBtn">Select Excel Workbook</button> <span id="excelName"></span></p>
+<br><br>
 
-<button id="processBtn">PROCESS</button>
-<button id="clearFormBtn">CLEAR FORM</button>
+<button id="selectFolderBtn">Select Promo Folder</button>
+<button id="renameBtn">Rename Files</button>
 
-<div id="status">Waiting for input...</div>
+<div id="log"></div>
+
 </div>
 
 <script>
-let sourceHandle=null,destHandle=null,excelHandle=null;
-function log(t){
-    document.getElementById("status").textContent = t;
+
+let folderHandle = null;
+
+function log(message){
+    const logDiv = document.getElementById("log");
+    logDiv.innerHTML += message + "<br>";
+    logDiv.scrollTop = logDiv.scrollHeight;
 }
 
-function normalizeDate(v){
- let d=v.replace(/\D/g,'');
- if(d.length===6) return d.slice(0,2)+"-"+d.slice(2,4)+"-"+d.slice(4,6);
- return v.replace(/[./]/g,'-');
-}
+document.getElementById("selectFolderBtn").addEventListener("click", async () => {
 
-tdDate.addEventListener('blur',()=>tdDate.value=normalizeDate(tdDate.value.trim()));
+    try{
+        folderHandle = await window.showDirectoryPicker();
+        log("✅ Folder selected successfully");
+    }
+    catch(err){
+        log("❌ Folder selection cancelled");
+    }
 
-[pgmName,epNo,tdDate,duration].forEach((el,i,a)=>{
- el.addEventListener('keydown',e=>{
-  if(e.key==='Enter'){
-   e.preventDefault();
-   if(i<a.length-1) a[i+1].focus(); else document.getElementById("sourceBtn").focus();
-  }
- });
 });
 
-clearFormBtn.onclick=()=>{
- pgmName.value=''; epNo.value=''; tdDate.value=''; duration.value='';
- log('Form cleared. Folder and workbook selections retained.');
-};
+document.getElementById("renameBtn").addEventListener("click", async () => {
 
-sourceBtn.onclick=async()=>{try{sourceHandle=await showDirectoryPicker();sourceName.textContent=sourceHandle.name;}catch(e){}};
-destBtn.onclick=async()=>{try{destHandle=await showDirectoryPicker();destName.textContent=destHandle.name;}catch(e){}};
-excelBtn.onclick=async()=>{
- try{
- [excelHandle]=await showOpenFilePicker({types:[{description:'Excel',accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}]});
- excelName.textContent=excelHandle.name;
- }catch(e){}
-};
+    const excelInput = document.getElementById("excelFile");
 
-clearDestBtn.onclick=async()=>{
- if(!destHandle) return log("❌ Select Destination Folder");
- if(!confirm("Delete all files in Audio and Video folders?")) return;
- try{
-  let count=0;
-  const a=await destHandle.getDirectoryHandle("Audio");
-  const v=await destHandle.getDirectoryHandle("Video");
-  for await (const [n,h] of a.entries()){ if(h.kind==="file"){ await a.removeEntry(n); count++; } }
-  for await (const [n,h] of v.entries()){ if(h.kind==="file"){ await v.removeEntry(n); count++; } }
-  log("✓ Destination cleared\n\n"+count+" files deleted");
- }catch(e){ log("❌ "+e.message); }
-};
+    if(excelInput.files.length === 0){
+        alert("Please select Excel file");
+        return;
+    }
 
-function isME(name){ return /\bME\b/i.test(name.replace(/\.[^/.]+$/,'')); }
-function prevDate(td){
- const [d,m,y]=td.split('-').map(Number);
- const dt=new Date(2000+y,m-1,d); dt.setDate(dt.getDate()-1);
- return String(dt.getDate()).padStart(2,'0')+"-"+String(dt.getMonth()+1).padStart(2,'0')+"-"+String(dt.getFullYear()).slice(-2);
-}
-async function fileExists(folder,name){ try{await folder.getFileHandle(name);return true;}catch{return false;} }
-async function copyFile(srcHandle,destFolder,newName){
- const src=await srcHandle.getFile();
- const dh=await destFolder.getFileHandle(newName,{create:true});
- const w=await dh.createWritable();
- await w.write(await src.arrayBuffer()); await w.close();
-}
+    if(!folderHandle){
+        alert("Please select Promo Folder");
+        return;
+    }
 
-processBtn.onclick=async()=>{
-try{
-const pgm=pgmName.value.trim(), ep=epNo.value.trim(), td=normalizeDate(tdDate.value.trim()), dur=duration.value.trim();
-tdDate.value=td;
-if(!pgm||!ep||!td||!dur) return log("❌ Fill all fields");
-if(!sourceHandle) return log("❌ Select Source Folder");
-if(!destHandle) return log("❌ Select Destination Folder");
-if(!excelHandle) return log("❌ Select Excel Workbook");
+    document.getElementById("log").innerHTML = "";
 
-let video=null,hdsd=null,me=null;
-for await(const entry of sourceHandle.values()){
- if(entry.kind!=="file") continue;
- const n=entry.name.toLowerCase();
-    if(n.startsWith("._")) continue;
-if(n === ".ds_store") continue;
- if(n.endsWith(".mxf")||n.endsWith(".mov")){ if(video) return log("❌ Multiple video files found"); video=entry; }
- if(n.endsWith(".wav")){ if(isME(entry.name)) me=entry; else hdsd=entry; }
-}
-if(!video) return log("❌ No video file found");
-if(!hdsd && !me) return log("❌ No WAV audio file found");
+    try{
 
-let audioFolder,videoFolder;
-try{audioFolder=await destHandle.getDirectoryHandle("Audio");}catch{return log("❌ Audio folder not found");}
-try{videoFolder=await destHandle.getDirectoryHandle("Video");}catch{return log("❌ Video folder not found");}
+        log("Reading Excel file...");
 
-const ext=video.name.substring(video.name.lastIndexOf("."));
-const jobs=[{folder:videoFolder,name:`${pgm}_EP_${ep}_TD_${td}_${dur} SEC${ext}`,source:video}];
-if(hdsd){
- jobs.push({folder:audioFolder,name:`${pgm}_EP_${ep}_TD_${td}_${dur} SEC_HD_SD TODAY.wav`,source:hdsd});
- jobs.push({folder:audioFolder,name:`${pgm}_EP_${ep}_TD_${td}_${dur} SEC_HD_SD TOMORROW.wav`,source:hdsd});
-}
-if(me){
- jobs.push({folder:audioFolder,name:`${pgm}_EP_${ep}_TD_${td}_${dur} SEC_ME TODAY.wav`,source:me});
- jobs.push({folder:audioFolder,name:`${pgm}_EP_${ep}_TD_${td}_${dur} SEC_ME TOMORROW.wav`,source:me});
-}
-for(const j of jobs){ if(await fileExists(j.folder,j.name)) return log("❌ File already exists\n\n"+j.name); }
-for(const j of jobs){ await copyFile(j.source,j.folder,j.name); }
+        const excelData = await excelInput.files[0].arrayBuffer();
 
-const excelFile=await excelHandle.getFile();
-const wb=XLSX.read(await excelFile.arrayBuffer(),{type:'array'});
-const ws=wb.Sheets[wb.SheetNames[0]];
-const prev=prevDate(td);
-["G2","G4","G6"].forEach(c=>ws[c]={t:"s",v:`${pgm}_EP ${ep}_${dur} SEC_TD_${prev}`});
-["G3","G5","G7"].forEach(c=>ws[c]={t:"s",v:`${pgm}_EP ${ep}_${dur} SEC_TD_${td}`});
-const out=XLSX.write(wb,{bookType:'xlsx',type:'array'});
-const writable=await excelHandle.createWritable();
-await writable.write(out); await writable.close();
+        const workbook = XLSX.read(excelData);
 
-log(
-"✓ Source folder verified\n\n" +
-"✓ Destination folder verified\n\n" +
-"✓ Audio folder found\n\n" +
-"✓ Video folder found\n\n" +
-"✓ Files renamed and copied\n\n" +
-"✓ Excel updated\n\n" +
-"✓ Workbook saved\n\n" +
-"✓ Process completed successfully"
-);
-}catch(err){ log("❌ Error\n\n"+err.message); }
-};
-window.onload = () => {
-    document.getElementById("pgmName").focus();
-};
+        const sheet =
+            workbook.Sheets[
+                workbook.SheetNames[0]
+            ];
+
+        const rows =
+            XLSX.utils.sheet_to_json(sheet,{
+                header:1
+            });
+
+        let fileMap = {};
+
+        log("Scanning folder...");
+
+        for await (const [name,handle] of folderHandle.entries()){
+
+            if(handle.kind !== "file")
+                continue;
+
+            const dot = name.lastIndexOf(".");
+
+            if(dot === -1)
+                continue;
+
+            const baseName =
+                name.substring(0,dot)
+                .trim()
+                .toLowerCase();
+
+            fileMap[baseName] = name;
+        }
+
+        let renamedCount = 0;
+        let skippedCount = 0;
+        let notFoundCount = 0;
+
+        log("<hr>");
+
+        for(let i=1;i<rows.length;i++){
+
+            const row = rows[i];
+
+            const promoName =
+                String(row[1] || "")
+                .trim();
+
+            const houseNumber =
+                String(row[3] || "")
+                .trim();
+
+            if(!promoName || !houseNumber)
+                continue;
+
+            const key =
+                promoName.toLowerCase();
+
+            if(!fileMap[key]){
+
+                log(
+                    "❌ Not Found : " +
+                    promoName
+                );
+
+                notFoundCount++;
+                continue;
+            }
+
+            const oldFileName =
+                fileMap[key];
+
+            const extension =
+                oldFileName.substring(
+                    oldFileName.lastIndexOf(".")
+                );
+
+            const newFileName =
+                houseNumber + extension;
+
+            try{
+
+                let exists = false;
+
+                try{
+                    await folderHandle.getFileHandle(
+                        newFileName
+                    );
+                    exists = true;
+                }
+                catch{}
+
+                if(exists){
+
+                    log(
+                        "⚠ Already Exists : " +
+                        newFileName
+                    );
+
+                    skippedCount++;
+                    continue;
+                }
+
+                const oldHandle =
+                    await folderHandle.getFileHandle(
+                        oldFileName
+                    );
+
+                const oldFile =
+                    await oldHandle.getFile();
+
+                const buffer =
+                    await oldFile.arrayBuffer();
+
+                const newHandle =
+                    await folderHandle.getFileHandle(
+                        newFileName,
+                        {create:true}
+                    );
+
+                const writable =
+                    await newHandle.createWritable();
+
+                await writable.write(buffer);
+                await writable.close();
+
+                await folderHandle.removeEntry(
+                    oldFileName
+                );
+
+                renamedCount++;
+
+                log(
+                    "✅ " +
+                    oldFileName +
+                    " → " +
+                    newFileName
+                );
+
+            }
+            catch(err){
+
+                log(
+                    "❌ Error : " +
+                    oldFileName +
+                    " : " +
+                    err.message
+                );
+
+            }
+
+        }
+
+        log("<hr>");
+        log("Finished");
+        log("Renamed : " + renamedCount);
+        log("Skipped : " + skippedCount);
+        log("Not Found : " + notFoundCount);
+
+    }
+    catch(err){
+
+        log(
+            "❌ Fatal Error : " +
+            err.message
+        );
+
+    }
+
+});
+
 </script>
+
 </body>
 </html>
