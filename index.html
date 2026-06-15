@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Promo File Renamer</title>
+<title>MXF House Number Renamer</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
 body{
     background:#1e1e1e;
-    color:white;
+    color:#fff;
     font-family:Arial,sans-serif;
     padding:20px;
 }
@@ -21,7 +21,7 @@ body{
 }
 
 h2{
-    margin-bottom:20px;
+    color:#4CAF50;
 }
 
 button{
@@ -30,8 +30,8 @@ button{
     border:none;
     padding:10px 20px;
     margin:5px;
-    cursor:pointer;
     border-radius:5px;
+    cursor:pointer;
 }
 
 button:hover{
@@ -39,7 +39,7 @@ button:hover{
 }
 
 input[type=file]{
-    margin:10px 0;
+    margin-top:10px;
 }
 
 #log{
@@ -47,22 +47,10 @@ input[type=file]{
     background:#111;
     border:1px solid #444;
     padding:15px;
-    height:450px;
+    height:500px;
     overflow-y:auto;
-    white-space:pre-wrap;
     font-family:Consolas,monospace;
-}
-
-.success{
-    color:#00ff7f;
-}
-
-.error{
-    color:#ff5555;
-}
-
-.warning{
-    color:#ffd700;
+    white-space:pre-wrap;
 }
 </style>
 </head>
@@ -70,14 +58,14 @@ input[type=file]{
 
 <div class="container">
 
-<h2>Promo House Number Renamer</h2>
+<h2>MXF House Number Renamer</h2>
 
-<label>Select Excel File</label><br>
+<p>Select Excel File</p>
 <input type="file" id="excelFile" accept=".xlsx,.xls">
 
 <br><br>
 
-<button id="selectFolderBtn">Select Promo Folder</button>
+<button id="selectFolderBtn">Select MXF Folder</button>
 <button id="renameBtn">Rename Files</button>
 
 <div id="log"></div>
@@ -88,9 +76,9 @@ input[type=file]{
 
 let folderHandle = null;
 
-function log(message){
+function log(msg){
     const logDiv = document.getElementById("log");
-    logDiv.innerHTML += message + "<br>";
+    logDiv.innerHTML += msg + "<br>";
     logDiv.scrollTop = logDiv.scrollHeight;
 }
 
@@ -98,7 +86,7 @@ document.getElementById("selectFolderBtn").addEventListener("click", async () =>
 
     try{
         folderHandle = await window.showDirectoryPicker();
-        log("✅ Folder selected successfully");
+        log("✅ Folder selected");
     }
     catch(err){
         log("❌ Folder selection cancelled");
@@ -116,7 +104,7 @@ document.getElementById("renameBtn").addEventListener("click", async () => {
     }
 
     if(!folderHandle){
-        alert("Please select Promo Folder");
+        alert("Please select MXF folder");
         return;
     }
 
@@ -124,11 +112,13 @@ document.getElementById("renameBtn").addEventListener("click", async () => {
 
     try{
 
-        log("Reading Excel file...");
+        log("Reading Excel...");
 
-        const excelData = await excelInput.files[0].arrayBuffer();
+        const excelData =
+            await excelInput.files[0].arrayBuffer();
 
-        const workbook = XLSX.read(excelData);
+        const workbook =
+            XLSX.read(excelData);
 
         const sheet =
             workbook.Sheets[
@@ -136,26 +126,28 @@ document.getElementById("renameBtn").addEventListener("click", async () => {
             ];
 
         const rows =
-            XLSX.utils.sheet_to_json(sheet,{
-                header:1
-            });
+            XLSX.utils.sheet_to_json(
+                sheet,
+                {header:1}
+            );
 
         let fileMap = {};
 
         log("Scanning folder...");
 
-        for await (const [name,handle] of folderHandle.entries()){
+        for await (const [name, handle] of folderHandle.entries()) {
 
             if(handle.kind !== "file")
                 continue;
 
-            const dot = name.lastIndexOf(".");
-
-            if(dot === -1)
+            if(!name.toLowerCase().endsWith(".mxf"))
                 continue;
 
-            const baseName =
-                name.substring(0,dot)
+            let baseName =
+                name.replace(/\.mxf$/i,"");
+
+            baseName = baseName
+                .replace(/\s+/g,' ')
                 .trim()
                 .toLowerCase();
 
@@ -166,75 +158,63 @@ document.getElementById("renameBtn").addEventListener("click", async () => {
         let skippedCount = 0;
         let notFoundCount = 0;
 
-        log("<hr>");
+        log("----------------------------------------");
 
         for(let i=1;i<rows.length;i++){
 
             const row = rows[i];
 
-            const promoName =
+            let promoName =
                 String(row[1] || "")
                 .trim();
 
-            const houseNumber =
+            let houseNumber =
                 String(row[3] || "")
                 .trim();
 
             if(!promoName || !houseNumber)
                 continue;
 
-            const key =
-                promoName.toLowerCase();
+            promoName = promoName
+                .replace(/\.mxf$/i,"")
+                .replace(/\s+/g,' ')
+                .trim()
+                .toLowerCase();
 
-            if(!fileMap[key]){
+            if(!fileMap[promoName]){
 
-                log(
-                    "❌ Not Found : " +
-                    promoName
-                );
+                log("❌ NOT FOUND : " + promoName);
 
                 notFoundCount++;
                 continue;
             }
 
             const oldFileName =
-                fileMap[key];
-
-            const extension =
-                oldFileName.substring(
-                    oldFileName.lastIndexOf(".")
-                );
+                fileMap[promoName];
 
             const newFileName =
-                houseNumber + extension;
+                houseNumber + ".mxf";
 
             try{
 
                 let exists = false;
 
                 try{
-                    await folderHandle.getFileHandle(
-                        newFileName
-                    );
+                    await folderHandle.getFileHandle(newFileName);
                     exists = true;
                 }
                 catch{}
 
                 if(exists){
 
-                    log(
-                        "⚠ Already Exists : " +
-                        newFileName
-                    );
+                    log("⚠ ALREADY EXISTS : " + newFileName);
 
                     skippedCount++;
                     continue;
                 }
 
                 const oldHandle =
-                    await folderHandle.getFileHandle(
-                        oldFileName
-                    );
+                    await folderHandle.getFileHandle(oldFileName);
 
                 const oldFile =
                     await oldHandle.getFile();
@@ -254,24 +234,22 @@ document.getElementById("renameBtn").addEventListener("click", async () => {
                 await writable.write(buffer);
                 await writable.close();
 
-                await folderHandle.removeEntry(
-                    oldFileName
-                );
-
-                renamedCount++;
+                await folderHandle.removeEntry(oldFileName);
 
                 log(
-                    "✅ " +
+                    "✅ RENAMED : " +
                     oldFileName +
                     " → " +
                     newFileName
                 );
 
+                renamedCount++;
+
             }
             catch(err){
 
                 log(
-                    "❌ Error : " +
+                    "❌ ERROR : " +
                     oldFileName +
                     " : " +
                     err.message
@@ -281,7 +259,7 @@ document.getElementById("renameBtn").addEventListener("click", async () => {
 
         }
 
-        log("<hr>");
+        log("----------------------------------------");
         log("Finished");
         log("Renamed : " + renamedCount);
         log("Skipped : " + skippedCount);
@@ -290,10 +268,7 @@ document.getElementById("renameBtn").addEventListener("click", async () => {
     }
     catch(err){
 
-        log(
-            "❌ Fatal Error : " +
-            err.message
-        );
+        log("❌ FATAL ERROR : " + err.message);
 
     }
 
