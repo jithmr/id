@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MXF House Number Renamer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+body{background:#1e1e1e;color:#fff;font-family:Arial;padding:20px}
+button{padding:10px 18px;margin:5px;cursor:pointer}
+#log{height:400px;overflow:auto;background:#111;border:1px solid #444;padding:10px;white-space:pre-wrap}
+.summary{margin:10px 0;font-weight:bold}
+</style>
+</head>
+<body>
+<h2>MXF House Number Renamer</h2>
+<input type="file" id="excelFile" accept=".xlsx,.xls"><br><br>
+<button id="folderBtn">Select MXF Folder</button>
+<button id="previewBtn">Preview Matches</button>
+<button id="renameBtn">Rename Files</button>
+<button id="undoBtn">Undo Last Rename</button>
+<button id="saveBtn">Save Log</button>
+<div class="summary" id="summary"></div>
+<div id="log"></div>
+
+<script>
+let folderHandle=null;
+let previewData=[];
+let renameHistory=[];
+
+function log(t){let d=document.getElementById('log');d.innerHTML+=t+"<br>";d.scrollTop=d.scrollHeight;}
+function clearLog(){document.getElementById('log').innerHTML='';}
+function normalizeName(name){
+ return name.replace(/\.mxf$/i,'').replace(/[^a-zA-Z0-9]/g,'').toLowerCase();
+}
+
+async function buildPreview(){
+ const excel=document.getElementById('excelFile');
+ if(!excel.files.length) throw new Error("Select Excel file");
+ if(!folderHandle) throw new Error("Select folder");
+
+ const data=await excel.files[0].arrayBuffer();
+ const wb=XLSX.read(data);
+ const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+
+ let fileMap={};
+ for await (const [name,h] of folderHandle.entries()){
+   if(h.kind==='file' && name.toLowerCase().endsWith('.mxf')){
+      fileMap[normalizeName(name)] = name;
+   }
+ }
+
+ previewData=[];
+ let matched=0, notFound=0;
+ let hnMap={};
+
+ for(let i=1;i<rows.length;i++){
+   let promo=String(rows[i][1]||'').trim();
+   let hn=String(rows[i][3]||'').trim();
+   if(!promo || !hn) continue;
+
+   hnMap[hn]=(hnMap[hn]||0)+1;
+
+   let oldFile=fileMap[normalizeName(promo)];
+   if(oldFile){
+      previewData.push({oldFile,newFile:hn+'.mxf'});
+      matched++;
+   } else {
+      previewData.push({missing:true,promo});
+      notFound++;
+   }
+ }
+
+ let dup=Object.values(hnMap).filter(v=>v>1).length;
+ document.getElementById('summary').textContent =
+   `Matched: ${matched} | Missing: ${notFound} | Duplicate House Nos: ${dup}`;
+ return {matched,notFound,dup};
+}
+
+document.getElementById('folderBtn').onclick=async()=>{
+ try{
+   folderHandle=await window.showDirectoryPicker();
+   log('✅ Folder selected');
+ }catch(e){}
+};
+
+document.getElementById('previewBtn').onclick=async()=>{
+ try{
+   clearLog();
+   await buildPreview();
+   log('===== PREVIEW =====');
+   previewData.forEach(x=>{
+      if(x.missing) log('❌ NOT FOUND : '+x.promo);
+      else log('✓ '+x.oldFile+' → '+x.newFile);
+   });
+ }catch(e){alert(e.message);}
+};
+
+document.getElementById('renameBtn').onclick=async()=>{
+ try{
+   clearLog();
+   await buildPreview();
+   renameHistory=[];
+
+   for(const item of previewData){
+     if(item.missing) continue;
+
+     try{
+       let exists=false;
+       try{ await folderHandle.getFileHandle(item.newFile); exists=true; }catch{}
+
+       if(exists){
+         log('⚠ EXISTS : '+item.newFile);
+         continue;
+       }
+
+       const oldHandle=await folderHandle.getFileHandle(item.oldFile);
+       const oldFile=await oldHandle.getFile();
+       const buf=await oldFile.arrayBuffer();
+
+       const newHandle=await folderHandle.getFileHandle(item.newFile,{create:true});
+       const wr=await newHandle.createWritable();
+       await wr.write(buf);
+       await wr.close();
+
+       await folderHandle.removeEntry(item.oldFile);
+
+       renameHistory.push(item);
+       log('✅ RENAMED : '+item.oldFile+' → '+item.newFile);
+     }catch(err){
+       log('❌ ERROR : '+item.oldFile);
+     }
+   }
+   localStorage.setItem('renameHistory',JSON.stringify(renameHistory));
+ }catch(e){alert(e.message);}
+};
+
+document.getElementById('undoBtn').onclick=async()=>{
+ let history=JSON.parse(localStorage.getItem('renameHistory')||'[]');
+ if(!history.length){ alert('No undo data'); return; }
+
+ clearLog();
+
+ for(const item of history){
+   try{
+     const newHandle=await folderHandle.getFileHandle(item.newFile);
+     const file=await newHandle.getFile();
+     const buf=await file.arrayBuffer();
+
+     const oldHandle=await folderHandle.getFileHandle(item.oldFile,{create:true});
+     const wr=await oldHandle.createWritable();
+     await wr.write(buf);
+     await wr.close();
+
+     await folderHandle.removeEntry(item.newFile);
+
+     log('↩ RESTORED : '+item.oldFile);
+   }catch(e){
+     log('❌ UNDO FAILED : '+item.newFile);
+   }
+ }
+ localStorage.removeItem('renameHistory');
+};
+
+document.getElementById('saveBtn').onclick=()=>{
+ const text=document.getElementById('log').innerText;
+ const blob=new Blob([text],{type:'text/plain'});
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);
+ a.download='RenameLog.txt';
+ a.click();
+};
+</script>
+</body>
+</html>
