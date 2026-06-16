@@ -19,6 +19,9 @@ th,td{border:1px solid #555;padding:6px}
 <button id="pasteBtn">Paste From Clipboard</button>
 <button id="previewBtn">Preview Matches</button>
 <button id="renameBtn">Rename Files</button>
+ <button id="undoBtn">Undo Last Rename</button>
+  <button id="debugBtn">Show Clipboard</button>
+
 
 <div id="status"></div>
 <div id="preview"></div>
@@ -27,6 +30,7 @@ th,td{border:1px solid #555;padding:6px}
 <script>
 let folderHandle=null;
 let rows=[];
+ let renameHistory = [];
 
 function normalizeName(name){
  return name.replace(/\.mxf$/i,'')
@@ -43,34 +47,54 @@ document.getElementById('folderBtn').onclick=async()=>{
  document.getElementById('status').innerHTML="✅ Folder selected";
 };
 
-document.getElementById('pasteBtn').onclick=async()=>{
- try{
-   const text = await navigator.clipboard.readText();
+document.getElementById('pasteBtn').onclick = async () => {
 
-   const lines=text.split(/\r?\n/).filter(x=>x.trim());
-   rows=[];
+    try {
 
-   for(const line of lines){
-      const cols=line.split('\t');
+        const text = await navigator.clipboard.readText();
 
-      if(cols.length < 4) continue;
+        const lines = text
+            .split(/\r?\n/)
+            .map(x => x.trim())
+            .filter(x => x);
 
-      if(cols[1].toLowerCase().includes("promo timing name"))
-         continue;
+        rows = [];
 
-      rows.push({
-         promo: cols[1].trim(),
-         house: cols[3].trim()
-      });
-   }
+        let startIndex = 0;
 
-   document.getElementById('status').innerHTML =
-      `✅ Imported ${rows.length} rows from clipboard`;
+        for (let i = 0; i < lines.length; i++) {
 
- }catch(err){
-   alert("Clipboard access failed. Use Chrome and allow clipboard permission.");
- }
+            if (lines[i].toLowerCase() === "house number") {
+                startIndex = i + 1;
+                break;
+            }
+
+        }
+
+        for (let i = startIndex; i + 3 < lines.length; i += 4) {
+
+            rows.push({
+
+                promo: lines[i + 1],
+
+                house: lines[i + 3]
+
+            });
+
+        }
+
+        document.getElementById('status').innerHTML =
+            `✅ Imported ${rows.length} rows from clipboard`;
+
+    }
+    catch (err) {
+
+        alert("Clipboard read failed: " + err.message);
+
+    }
+
 };
+
 
 document.getElementById('previewBtn').onclick=async()=>{
 
@@ -110,6 +134,96 @@ document.getElementById('previewBtn').onclick=async()=>{
     `Matched: ${found} | Missing: ${missing}`;
 };
 
+document.getElementById('debugBtn').onclick = async () => {
+
+    const text = await navigator.clipboard.readText();
+
+    console.log(text);
+
+    alert(
+        text
+        .replace(/\t/g, "[TAB]")
+        .replace(/\n/g, "[NEWLINE]\n")
+        .substring(0,1500)
+    );
+
+};
+document.getElementById('undoBtn').onclick = async () => {
+
+    if (!folderHandle) {
+        alert("Select folder first");
+        return;
+    }
+
+    if (!confirm("Restore all files from last rename?"))
+        return;
+
+    const history =
+        JSON.parse(
+            localStorage.getItem("renameHistory") || "[]"
+        );
+
+    if (history.length === 0) {
+        alert("No rename history found");
+        return;
+    }
+
+    document.getElementById('log').innerHTML = '';
+
+    for (const item of history) {
+
+        try {
+
+            const currentHandle =
+                await folderHandle.getFileHandle(
+                    item.newFile
+                );
+
+            const file =
+                await currentHandle.getFile();
+
+            const buffer =
+                await file.arrayBuffer();
+
+            const oldHandle =
+                await folderHandle.getFileHandle(
+                    item.oldFile,
+                    { create: true }
+                );
+
+            const writable =
+                await oldHandle.createWritable();
+
+            await writable.write(buffer);
+            await writable.close();
+
+            await folderHandle.removeEntry(
+                item.newFile
+            );
+
+            log(
+                "↩ RESTORED : " +
+                item.oldFile
+            );
+
+        }
+        catch(err){
+
+            log(
+                "❌ FAILED : " +
+                item.newFile
+            );
+
+        }
+
+    }
+
+    localStorage.removeItem("renameHistory");
+
+    log("<hr>Undo Complete");
+
+};
+ 
 document.getElementById('renameBtn').onclick=async()=>{
 
  if(!folderHandle){ alert("Select folder"); return; }
@@ -165,6 +279,15 @@ document.getElementById('renameBtn').onclick=async()=>{
 
       renamed++;
       log("✅ " + oldFile + " → " + newFile);
+    renameHistory.push({
+    oldFile: oldFile,
+    newFile: newFile
+});
+
+localStorage.setItem(
+    "renameHistory",
+    JSON.stringify(renameHistory)
+);
 
    }catch(err){
       log("❌ ERROR : " + oldFile);
